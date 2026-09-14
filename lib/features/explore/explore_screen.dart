@@ -1,0 +1,363 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import '../../core/config/app_config.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
+import '../../core/utils/constants.dart';
+import '../../shared/models/place_model.dart';
+import '../../shared/providers/app_providers.dart';
+
+class ExploreScreen extends ConsumerStatefulWidget {
+  const ExploreScreen({super.key});
+
+  @override
+  ConsumerState<ExploreScreen> createState() => _ExploreScreenState();
+}
+
+class _ExploreScreenState extends ConsumerState<ExploreScreen> {
+  GoogleMapController? _mapController;
+  Place? _selectedPlace;
+  String _selectedCategory = 'Food';
+
+  @override
+  void dispose() {
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final locationAsync = ref.watch(locationStreamProvider);
+    final recommendationsAsync = ref.watch(recommendationListProvider);
+
+    return Scaffold(
+      body: Stack(
+        children: [
+          // 1. Map Canvas (Live Google Map or Premium Mock Vector Map)
+          AppConfig.useMockData
+              ? _buildMockMap(locationAsync.value ?? const LatLng(AppConfig.defaultLat, AppConfig.defaultLng), recommendationsAsync.value ?? [])
+              : locationAsync.when(
+                  data: (loc) => _buildLiveMap(loc, recommendationsAsync.value ?? []),
+                  loading: () => const Center(child: CircularProgressIndicator()),
+                  error: (_, __) => _buildMockMap(const LatLng(AppConfig.defaultLat, AppConfig.defaultLng), recommendationsAsync.value ?? []),
+                ),
+
+          // 2. Floating Top Search & Category Pills
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Search Bar
+                    Card(
+                      elevation: 4,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.search, color: AppColors.primary),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                decoration: const InputDecoration(
+                                  hintText: 'Search destinations or eat...',
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  filled: false,
+                                ),
+                                onSubmitted: (val) {
+                                  // Trigger text search
+                                },
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Categories
+                    SizedBox(
+                      height: 40,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: AppConstants.categories.length,
+                        itemBuilder: (context, index) {
+                          final cat = AppConstants.categories[index];
+                          final isSelected = _selectedCategory == cat;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: ChoiceChip(
+                              label: Text('${AppConstants.categoryEmojis[cat] ?? ""} $cat'),
+                              selected: isSelected,
+                              onSelected: (selected) {
+                                if (selected) {
+                                  setState(() {
+                                    _selectedCategory = cat;
+                                  });
+                                }
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // 3. Swipeable / Bottom Recommendation Card Preview
+          if (_selectedPlace != null)
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 20, right: 20, bottom: 84), // FAB offset
+                child: _buildBottomPreviewCard(_selectedPlace!),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ── Live Google Map ────────────────────────────────
+  Widget _buildLiveMap(LatLng userLoc, List<dynamic> recommendations) {
+    final Set<Marker> markers = {
+      Marker(
+        markerId: const MarkerId('user_location'),
+        position: userLoc,
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+        infoWindow: const InfoWindow(title: 'Your Location'),
+      ),
+    };
+
+    for (var rec in recommendations) {
+      final place = rec.place;
+      markers.add(
+        Marker(
+          markerId: MarkerId(place.id),
+          position: place.location,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+          onTap: () {
+            setState(() {
+              _selectedPlace = place;
+            });
+          },
+        ),
+      );
+    }
+
+    return GoogleMap(
+      initialCameraPosition: CameraPosition(
+        target: userLoc,
+        zoom: 14.0,
+      ),
+      onMapCreated: (controller) {
+        _mapController = controller;
+      },
+      markers: markers,
+      myLocationEnabled: true,
+      myLocationButtonEnabled: false,
+      zoomControlsEnabled: false,
+      onTap: (_) {
+        setState(() {
+          _selectedPlace = null;
+        });
+      },
+    );
+  }
+
+  // ── Mock Map Simulation (Vector Design) ─────────────
+  Widget _buildMockMap(LatLng userLoc, List<dynamic> recommendations) {
+    return Container(
+      color: const Color(0xFF0F1E24), // Sleek custom dark canvas background
+      child: Stack(
+        children: [
+          // Simulated Grid/Gridlines
+          Positioned.fill(
+            child: GridPaper(
+              color: Colors.white.withValues(alpha: 0.02),
+              divisions: 2,
+              subdivisions: 1,
+            ),
+          ),
+          // Water Body representation (Diagonal Vector Circle)
+          Positioned(
+            right: -100,
+            top: 200,
+            child: Container(
+              width: 350,
+              height: 350,
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          // Central Landmark representation (Fort)
+          Positioned(
+            left: 80,
+            bottom: 220,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                color: Colors.green.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(40),
+              ),
+            ),
+          ),
+
+          // User Location Pin
+          const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.my_location, color: AppColors.primary, size: 28),
+                SizedBox(height: 4),
+                Card(
+                  color: AppColors.primary,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    child: Text(
+                      'You',
+                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Render Nearby Recommendations Pins (Absolute Spaced offsets)
+          ...List.generate(recommendations.length, (index) {
+            final rec = recommendations[index];
+            final place = rec.place;
+            final isSelected = _selectedPlace?.id == place.id;
+
+            // Generate offset based on indexes
+            final double dx = 60.0 * (index % 3 + 1) * (index.isEven ? 1 : -0.8);
+            final double dy = 80.0 * (index % 2 + 1) * (index.isOdd ? 1 : -0.7);
+
+            return Center(
+              child: Transform.translate(
+                offset: Offset(dx, dy),
+                child: GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedPlace = place;
+                    });
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.location_on,
+                        color: isSelected ? AppColors.accent : Colors.redAccent,
+                        size: isSelected ? 42 : 32,
+                      ),
+                      const SizedBox(height: 2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.accent : AppColors.surface,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: AppColors.border, width: 0.5),
+                        ),
+                        child: Text(
+                          place.name.split(' ').first,
+                          style: TextStyle(
+                            color: isSelected ? AppColors.textPrimary : AppColors.textPrimary,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  // ── Place Preview Bottom Card ─────────────────────
+  Widget _buildBottomPreviewCard(Place place) {
+    return Card(
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        height: 128,
+        child: Row(
+          children: [
+            // Dummy photo thumbnail
+            Container(
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                color: AppColors.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.image, color: AppColors.primary),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    place.name,
+                    style: AppTextStyles.titleMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Icon(Icons.star, color: Colors.amber, size: 14),
+                      const SizedBox(width: 4),
+                      Text(place.rating?.toStringAsFixed(1) ?? 'N/A', style: AppTextStyles.bodySmall),
+                      const SizedBox(width: 8),
+                      Text(
+                        '·  ${place.distanceKm?.toStringAsFixed(1) ?? "0.0"} km away',
+                        style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          place.formattedAddress,
+                          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textMuted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.arrow_forward_outlined, color: AppColors.primary),
+                        onPressed: () => context.push('/place/${place.id}', extra: place),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
