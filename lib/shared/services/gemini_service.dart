@@ -20,7 +20,7 @@ class GeminiService {
       '/models/${AppConfig.geminiModel}:generateContent?key=${AppConfig.geminiApiKey}';
 
   /// Check if we should run in mock mode
-  bool get _shouldMock => AppConfig.useMockData;
+  bool get _shouldMock => AppConfig.useMockGemini;
 
   // ─────────────────────────────────────────────
   // Raw Gemini API Request Builder
@@ -305,7 +305,7 @@ Return ONLY this JSON format:
   // ─────────────────────────────────────────────
 
   Future<Itinerary> generateItinerary({
-    required List<Place> candidatePlaces,
+    required List<Place> places,
     required UserPreferences preferences,
     required String timeConstraint, // e.g. "2 hours", "Half Day", "Full Day"
   }) async {
@@ -315,7 +315,7 @@ Generate a chronological itinerary starting from now, selecting the best options
 Ensure all selections respect the user preferences, budget, travel style, and available time limit.
 
 Available Candidate Places:
-${candidatePlaces.map((p) => '- ID: ${p.id}, Name: ${p.name}, Type: ${p.primaryType}, LatLng: ${p.location.latitude},${p.location.longitude}, Rating: ${p.rating}').join('\n')}
+${places.map((p) => '- ID: ${p.id}, Name: ${p.name}, Type: ${p.primaryType}, LatLng: ${p.location.latitude},${p.location.longitude}, Rating: ${p.rating}').join('\n')}
 
 User Context & Constraints:
 - Available Time Duration: $timeConstraint
@@ -358,7 +358,7 @@ Return ONLY this JSON format:
     try {
       final jsonText = await _callGemini(prompt: prompt, forceJson: true);
       final decoded = jsonDecode(jsonText) as Map<String, dynamic>;
-      return Itinerary.fromGeminiJson(decoded, candidatePlaces);
+      return Itinerary.fromGeminiJson(decoded, places);
     } catch (_) {
       // Mock Itinerary fallback
       return Itinerary.fromGeminiJson({
@@ -403,7 +403,7 @@ Return ONLY this JSON format:
             'awareness': ['Gets crowded after 7:15 PM.', 'Parking is limited.'],
           }
         ]
-      }, candidatePlaces.isNotEmpty ? candidatePlaces : MockDataService.places);
+      }, places.isNotEmpty ? places : MockDataService.places);
     }
   }
 

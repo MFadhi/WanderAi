@@ -32,17 +32,46 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     final locationAsync = ref.watch(locationStreamProvider);
     final recommendationsAsync = ref.watch(recommendationListProvider);
 
+    // Automatically animate map to updated GPS coordinates
+    ref.listen<AsyncValue<LatLng>>(locationStreamProvider, (prev, next) {
+      next.whenData((loc) {
+        _mapController?.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(target: loc, zoom: 14.5),
+          ),
+        );
+      });
+    });
+
+    final currentLoc = locationAsync.value ??
+        const LatLng(AppConfig.defaultLat, AppConfig.defaultLng);
+
     return Scaffold(
+      floatingActionButton: Padding(
+        padding: const EdgeInsets.only(bottom: 90),
+        child: FloatingActionButton.small(
+          heroTag: 'explore_recenter',
+          backgroundColor: AppColors.surface,
+          onPressed: () async {
+            ref.invalidate(locationStreamProvider);
+            try {
+              final loc = await ref.read(locationServiceProvider).getCurrentLocation();
+              _mapController?.animateCamera(
+                CameraUpdate.newCameraPosition(
+                  CameraPosition(target: loc, zoom: 15.0),
+                ),
+              );
+            } catch (_) {}
+          },
+          child: const Icon(Icons.my_location, color: AppColors.primary),
+        ),
+      ),
       body: Stack(
         children: [
-          // 1. Map Canvas (Live Google Map or Premium Mock Vector Map)
-          AppConfig.useMockData
-              ? _buildMockMap(locationAsync.value ?? const LatLng(AppConfig.defaultLat, AppConfig.defaultLng), recommendationsAsync.value ?? [])
-              : locationAsync.when(
-                  data: (loc) => _buildLiveMap(loc, recommendationsAsync.value ?? []),
-                  loading: () => const Center(child: CircularProgressIndicator()),
-                  error: (_, __) => _buildMockMap(const LatLng(AppConfig.defaultLat, AppConfig.defaultLng), recommendationsAsync.value ?? []),
-                ),
+          // 1. Map Canvas (Live Google Map or Fallback Mock Vector Map)
+          AppConfig.useLiveMap
+              ? _buildLiveMap(currentLoc, recommendationsAsync.value ?? [])
+              : _buildMockMap(currentLoc, recommendationsAsync.value ?? []),
 
           // 2. Floating Top Search & Category Pills
           SafeArea(
@@ -164,7 +193,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       },
       markers: markers,
       myLocationEnabled: true,
-      myLocationButtonEnabled: false,
+      myLocationButtonEnabled: true,
       zoomControlsEnabled: false,
       onTap: (_) {
         setState(() {

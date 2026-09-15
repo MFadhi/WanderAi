@@ -232,7 +232,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             title: const Text('🍛 Show Vegetarian Only'),
             subtitle: const Text('Filter restaurant recommendations to pure veg spots'),
             value: _vegetarian,
-            activeColor: AppColors.primary,
+            activeThumbColor: AppColors.primary,
             onChanged: (val) {
               setState(() {
                 _vegetarian = val;

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -79,6 +80,57 @@ final locationStreamProvider = StreamProvider<LatLng>((ref) {
     // If permission is denied or location services are disabled, fall back to default
     return const LatLng(AppConfig.defaultLat, AppConfig.defaultLng);
   });
+});
+
+// ─────────────────────────────────────────────
+// Current City Name Provider (Reverse Geocoding)
+// ─────────────────────────────────────────────
+
+final currentCityNameProvider = FutureProvider<String>((ref) async {
+  final locAsync = ref.watch(locationStreamProvider);
+  final loc = locAsync.value;
+  if (loc == null) return AppConfig.defaultCityName;
+
+  if (AppConfig.hasGoogleMapsKey) {
+    try {
+      final dio = Dio();
+      final res = await dio.get(
+        'https://maps.googleapis.com/maps/api/geocode/json',
+        queryParameters: {
+          'latlng': '${loc.latitude},${loc.longitude}',
+          'key': AppConfig.googleMapsApiKey,
+          'result_type': 'locality|sublocality|administrative_area_level_2|administrative_area_level_1',
+        },
+      );
+      if (res.statusCode == 200 &&
+          res.data['results'] is List &&
+          (res.data['results'] as List).isNotEmpty) {
+        final components =
+            res.data['results'][0]['address_components'] as List<dynamic>;
+        for (var c in components) {
+          final types = (c['types'] as List<dynamic>).cast<String>();
+          if (types.contains('locality') || types.contains('sublocality')) {
+            return c['long_name'] as String;
+          }
+        }
+        for (var c in components) {
+          final types = (c['types'] as List<dynamic>).cast<String>();
+          if (types.contains('administrative_area_level_2') ||
+              types.contains('administrative_area_level_1')) {
+            return c['long_name'] as String;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // If near Kannur coordinates
+  if ((loc.latitude - AppConfig.defaultLat).abs() < 0.05 &&
+      (loc.longitude - AppConfig.defaultLng).abs() < 0.05) {
+    return AppConfig.defaultCityName;
+  }
+
+  return '${loc.latitude.toStringAsFixed(2)}, ${loc.longitude.toStringAsFixed(2)}';
 });
 
 // ─────────────────────────────────────────────

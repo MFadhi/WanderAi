@@ -22,11 +22,14 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final recommendationAsync = ref.watch(currentRecommendationProvider);
+    final cityNameAsync = ref.watch(currentCityNameProvider);
 
     return Scaffold(
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
+            ref.invalidate(locationStreamProvider);
+            ref.invalidate(currentCityNameProvider);
             ref.invalidate(recommendationListProvider);
           },
           child: SingleChildScrollView(
@@ -63,23 +66,33 @@ class HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 16),
 
                 // Location Pill
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.inputFill,
-                    borderRadius: BorderRadius.circular(100),
-                    border: Border.all(color: AppColors.border, width: 0.5),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.location_on, color: AppColors.primary, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        AppConfig.defaultCityName,
-                        style: AppTextStyles.labelMedium.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                    ],
+                InkWell(
+                  onTap: () {
+                    ref.invalidate(locationStreamProvider);
+                    ref.invalidate(currentCityNameProvider);
+                    ref.invalidate(recommendationListProvider);
+                  },
+                  borderRadius: BorderRadius.circular(100),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.inputFill,
+                      borderRadius: BorderRadius.circular(100),
+                      border: Border.all(color: AppColors.border, width: 0.5),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.location_on, color: AppColors.primary, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          cityNameAsync.value ?? AppConfig.defaultCityName,
+                          style: AppTextStyles.labelMedium.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(Icons.refresh, size: 12, color: AppColors.textMuted),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 28),

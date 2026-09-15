@@ -33,7 +33,7 @@ class RecommendationEngine {
     List<Place> candidates = [];
 
     // 2. Fetch candidate places
-    if (AppConfig.useMockData) {
+    if (AppConfig.useMockPlaces) {
       candidates = List.from(MockDataService.places);
     } else {
       try {
@@ -114,7 +114,7 @@ class RecommendationEngine {
 
     // 2. Fetch multiple candidates covering interests
     List<Place> candidates = [];
-    if (AppConfig.useMockData) {
+    if (AppConfig.useMockPlaces) {
       candidates = List.from(MockDataService.places);
     } else {
       try {
@@ -138,21 +138,19 @@ class RecommendationEngine {
       candidates = List.from(MockDataService.places);
     }
 
-    // Clean and set distance
-    final List<Place> finalCandidates = [];
+    // 3. Score and pick best stops
+    final List<Place> validCandidates = [];
     for (var place in candidates) {
       place.distanceKm = _locationService.distanceBetween(currentLoc, place.location);
-      if (!finalCandidates.any((p) => p.id == place.id)) {
-        finalCandidates.add(place);
-      }
+      validCandidates.add(place);
     }
+    validCandidates.sort((a, b) => (a.distanceKm ?? 0).compareTo(b.distanceKm ?? 0));
 
-    // Sort by distance and take top 8 to reason over
-    finalCandidates.sort((a, b) => (a.distanceKm ?? 0).compareTo(b.distanceKm ?? 0));
-    final planCandidates = finalCandidates.take(8).toList();
+    final selectedStops = validCandidates.take(4).toList();
 
+    // 4. Generate structured Itinerary via Gemini
     return _geminiService.generateItinerary(
-      candidatePlaces: planCandidates,
+      places: selectedStops,
       preferences: preferences,
       timeConstraint: timeConstraint,
     );
@@ -167,7 +165,7 @@ class RecommendationEngine {
   ) async {
     // Compute travel routing options (Walk, Two Wheeler, Drive)
     List<TransportOption> transportOptions;
-    if (AppConfig.useMockData) {
+    if (AppConfig.useMockPlaces) {
       transportOptions = MockDataService.mockTransportOptions(place.distanceKm ?? 2.0);
     } else {
       try {
