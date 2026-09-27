@@ -59,15 +59,16 @@ class LocationService {
       );
     }
 
-    // 3. Get position (try fresh first, fallback to last known if timeout)
+    // 3. Get position (check last known first, then try fresh position)
+    final lastKnown = await Geolocator.getLastKnownPosition();
+
     try {
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 8),
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 5),
       );
       return LatLng(position.latitude, position.longitude);
     } catch (_) {
-      final lastKnown = await Geolocator.getLastKnownPosition();
       if (lastKnown != null) {
         return LatLng(lastKnown.latitude, lastKnown.longitude);
       }
@@ -89,41 +90,83 @@ class LocationService {
         1000.0;
   }
 
+  /// Opens device location settings.
+  Future<bool> openLocationSettings() => Geolocator.openLocationSettings();
+
+  /// Opens application permission settings.
+  Future<bool> openAppSettings() => Geolocator.openAppSettings();
+
   /// Watches live location stream with immediate first-emit.
   Stream<LatLng> watchLocation() {
     late StreamController<LatLng> controller;
 
     Future<void> start() async {
       try {
-        // 1. Check/request permission
+        // 1. Check if location services are enabled
+        final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          if (!controller.isClosed) {
+            controller.addError(const LocationException(
+              message:
+                  'Location services are disabled. Please enable GPS in device settings.',
+              reason: LocationFailureReason.serviceDisabled,
+            ));
+          }
+          return;
+        }
+
+        // 2. Check/request permission
         LocationPermission permission = await Geolocator.checkPermission();
         if (permission == LocationPermission.denied) {
           permission = await Geolocator.requestPermission();
         }
-        if (permission == LocationPermission.denied ||
-            permission == LocationPermission.deniedForever) {
-          controller.close();
+        if (permission == LocationPermission.denied) {
+          if (!controller.isClosed) {
+            controller.addError(const LocationException(
+              message:
+                  'Location permission was denied. Please allow location access.',
+              reason: LocationFailureReason.permissionDenied,
+            ));
+          }
+          return;
+        }
+        if (permission == LocationPermission.deniedForever) {
+          if (!controller.isClosed) {
+            controller.addError(const LocationException(
+              message:
+                  'Location permission is permanently denied. Please enable it in Settings.',
+              reason: LocationFailureReason.permissionPermanentlyDenied,
+            ));
+          }
           return;
         }
 
-        // 2. Emit last known position immediately (fast)
+        // 3. Emit last known position immediately (fast)
         final lastKnown = await Geolocator.getLastKnownPosition();
         if (lastKnown != null && !controller.isClosed) {
           controller.add(LatLng(lastKnown.latitude, lastKnown.longitude));
         }
 
-        // 3. Emit a fresh current position
+        // 4. Emit a fresh current position
         try {
           final fresh = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.high,
-            timeLimit: const Duration(seconds: 10),
+            timeLimit: const Duration(seconds: 8),
           );
           if (!controller.isClosed) {
             controller.add(LatLng(fresh.latitude, fresh.longitude));
           }
-        } catch (_) {}
+        } catch (_) {
+          if (lastKnown == null && !controller.isClosed) {
+            controller.addError(const LocationException(
+              message:
+                  'Could not determine your location. Please check your GPS signal.',
+              reason: LocationFailureReason.timeout,
+            ));
+          }
+        }
 
-        // 4. Forward ongoing stream updates (with NMEA disabled)
+        // 5. Forward ongoing stream updates (with NMEA disabled)
         final sub = Geolocator.getPositionStream(
           locationSettings: _platformLocationSettings(
             distanceFilter: 10,
@@ -135,7 +178,12 @@ class LocationService {
             }
           },
           onError: (e) {
-            if (!controller.isClosed) controller.addError(e);
+            if (!controller.isClosed) {
+              controller.addError(LocationException(
+                message: 'Error tracking location: $e',
+                reason: LocationFailureReason.unknown,
+              ));
+            }
           },
           cancelOnError: false,
         );

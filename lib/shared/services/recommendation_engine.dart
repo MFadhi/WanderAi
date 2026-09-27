@@ -22,13 +22,8 @@ class RecommendationEngine {
     required UserPreferences preferences,
     String? categoryFilter,
   }) async {
-    // 1. Get current user location (falls back to Kannur if disabled/fails)
-    LatLng currentLoc;
-    try {
-      currentLoc = await _locationService.getCurrentLocation();
-    } catch (_) {
-      currentLoc = const LatLng(AppConfig.defaultLat, AppConfig.defaultLng);
-    }
+    // 1. Get current user location (throws LocationException if unavailable)
+    final LatLng currentLoc = await _locationService.getCurrentLocation();
 
     List<Place> candidates = [];
 
@@ -50,7 +45,7 @@ class RecommendationEngine {
         if (candidates.isEmpty) {
           // Fallback to text search or other categories if empty
           candidates = await _placesService.textSearch(
-            query: categoryFilter ?? preferences.interests.firstOrNull ?? 'sightseeing in Kannur',
+            query: categoryFilter ?? preferences.interests.firstOrNull ?? 'top attractions',
             location: currentLoc,
             radiusMeters: AppConfig.defaultSearchRadius,
           );
@@ -104,13 +99,8 @@ class RecommendationEngine {
     required UserPreferences preferences,
     required String timeConstraint,
   }) async {
-    // 1. Retrieve current location
-    LatLng currentLoc;
-    try {
-      currentLoc = await _locationService.getCurrentLocation();
-    } catch (_) {
-      currentLoc = const LatLng(AppConfig.defaultLat, AppConfig.defaultLng);
-    }
+    // 1. Retrieve current location (throws LocationException if unavailable)
+    final LatLng currentLoc = await _locationService.getCurrentLocation();
 
     // 2. Fetch multiple candidates covering interests
     List<Place> candidates = [];

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/config/app_config.dart';
+import '../../core/errors/exceptions.dart';
 import '../../core/utils/constants.dart';
 import '../models/chat_message_model.dart';
 import '../models/place_model.dart';
@@ -76,10 +77,7 @@ final userPreferencesProvider = StateNotifierProvider<UserPreferencesNotifier, U
 
 final locationStreamProvider = StreamProvider<LatLng>((ref) {
   final locationService = ref.watch(locationServiceProvider);
-  return locationService.watchLocation().handleError((_) {
-    // If permission is denied or location services are disabled, fall back to default
-    return const LatLng(AppConfig.defaultLat, AppConfig.defaultLng);
-  });
+  return locationService.watchLocation();
 });
 
 // ─────────────────────────────────────────────
@@ -88,49 +86,47 @@ final locationStreamProvider = StreamProvider<LatLng>((ref) {
 
 final currentCityNameProvider = FutureProvider<String>((ref) async {
   final locAsync = ref.watch(locationStreamProvider);
-  final loc = locAsync.value;
-  if (loc == null) return AppConfig.defaultCityName;
-
-  if (AppConfig.hasGoogleMapsKey) {
-    try {
-      final dio = Dio();
-      final res = await dio.get(
-        'https://maps.googleapis.com/maps/api/geocode/json',
-        queryParameters: {
-          'latlng': '${loc.latitude},${loc.longitude}',
-          'key': AppConfig.googleMapsApiKey,
-          'result_type': 'locality|sublocality|administrative_area_level_2|administrative_area_level_1',
-        },
-      );
-      if (res.statusCode == 200 &&
-          res.data['results'] is List &&
-          (res.data['results'] as List).isNotEmpty) {
-        final components =
-            res.data['results'][0]['address_components'] as List<dynamic>;
-        for (var c in components) {
-          final types = (c['types'] as List<dynamic>).cast<String>();
-          if (types.contains('locality') || types.contains('sublocality')) {
-            return c['long_name'] as String;
+  return locAsync.when(
+    data: (loc) async {
+      if (AppConfig.hasGoogleMapsKey) {
+        try {
+          final dio = Dio();
+          final res = await dio.get(
+            'https://maps.googleapis.com/maps/api/geocode/json',
+            queryParameters: {
+              'latlng': '${loc.latitude},${loc.longitude}',
+              'key': AppConfig.googleMapsApiKey,
+              'result_type':
+                  'locality|sublocality|administrative_area_level_2|administrative_area_level_1',
+            },
+          );
+          if (res.statusCode == 200 &&
+              res.data['results'] is List &&
+              (res.data['results'] as List).isNotEmpty) {
+            final components =
+                res.data['results'][0]['address_components'] as List<dynamic>;
+            for (var c in components) {
+              final types = (c['types'] as List<dynamic>).cast<String>();
+              if (types.contains('locality') || types.contains('sublocality')) {
+                return c['long_name'] as String;
+              }
+            }
+            for (var c in components) {
+              final types = (c['types'] as List<dynamic>).cast<String>();
+              if (types.contains('administrative_area_level_2') ||
+                  types.contains('administrative_area_level_1')) {
+                return c['long_name'] as String;
+              }
+            }
           }
-        }
-        for (var c in components) {
-          final types = (c['types'] as List<dynamic>).cast<String>();
-          if (types.contains('administrative_area_level_2') ||
-              types.contains('administrative_area_level_1')) {
-            return c['long_name'] as String;
-          }
-        }
+        } catch (_) {}
       }
-    } catch (_) {}
-  }
 
-  // If near Kannur coordinates
-  if ((loc.latitude - AppConfig.defaultLat).abs() < 0.05 &&
-      (loc.longitude - AppConfig.defaultLng).abs() < 0.05) {
-    return AppConfig.defaultCityName;
-  }
-
-  return '${loc.latitude.toStringAsFixed(2)}, ${loc.longitude.toStringAsFixed(2)}';
+      return '${loc.latitude.toStringAsFixed(2)}, ${loc.longitude.toStringAsFixed(2)}';
+    },
+    loading: () => 'Locating...',
+    error: (err, _) => 'Location Unavailable',
+  );
 });
 
 // ─────────────────────────────────────────────
@@ -192,13 +188,9 @@ final recommendationListProvider = FutureProvider<List<Recommendation>>((ref) as
   return await engine.getRecommendations(preferences: preferences);
 });
 
-final currentRecommendationProvider = FutureProvider<Recommendation?>((ref) async {
-  final recommendationsAsync = ref.watch(recommendationListProvider);
-  return recommendationsAsync.when(
-    data: (list) => list.isNotEmpty ? list.first : null,
-    loading: () => null,
-    error: (_, __) => null,
-  );
+final currentRecommendationProvider = Provider<AsyncValue<Recommendation?>>((ref) {
+  final listAsync = ref.watch(recommendationListProvider);
+  return listAsync.whenData((list) => list.isNotEmpty ? list.first : null);
 });
 
 // ─────────────────────────────────────────────
@@ -360,9 +352,12 @@ class ItineraryNotifier extends StateNotifier<ItineraryState> {
 
       state = state.copyWith(itinerary: itinerary, isLoading: false);
     } catch (e) {
+      final String msg = e is LocationException
+          ? e.message
+          : 'I couldn\'t create a reliable itinerary. Please check your location or network and try again.';
       state = state.copyWith(
         isLoading: false,
-        errorMessage: 'I couldn\'t create a reliable itinerary. Please check your location or network and try again.',
+        errorMessage: msg,
       );
     }
   }

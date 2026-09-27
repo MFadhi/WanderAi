@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../core/config/app_config.dart';
+import '../../core/errors/exceptions.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/utils/constants.dart';
@@ -23,6 +23,7 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final recommendationAsync = ref.watch(currentRecommendationProvider);
     final cityNameAsync = ref.watch(currentCityNameProvider);
+    final locationAsync = ref.watch(locationStreamProvider);
 
     return Scaffold(
       body: SafeArea(
@@ -71,23 +72,40 @@ class HomeScreen extends ConsumerWidget {
                     ref.invalidate(locationStreamProvider);
                     ref.invalidate(currentCityNameProvider);
                     ref.invalidate(recommendationListProvider);
+                    if (locationAsync.hasError) {
+                      ref.read(locationServiceProvider).openLocationSettings();
+                    }
                   },
                   borderRadius: BorderRadius.circular(100),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(
-                      color: AppColors.inputFill,
+                      color: locationAsync.hasError
+                          ? AppColors.error.withValues(alpha: 0.12)
+                          : AppColors.inputFill,
                       borderRadius: BorderRadius.circular(100),
-                      border: Border.all(color: AppColors.border, width: 0.5),
+                      border: Border.all(
+                        color: locationAsync.hasError ? AppColors.error : AppColors.border,
+                        width: locationAsync.hasError ? 1.0 : 0.5,
+                      ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.location_on, color: AppColors.primary, size: 16),
+                        Icon(
+                          locationAsync.hasError ? Icons.location_off : Icons.location_on,
+                          color: locationAsync.hasError ? AppColors.error : AppColors.primary,
+                          size: 16,
+                        ),
                         const SizedBox(width: 6),
                         Text(
-                          cityNameAsync.value ?? AppConfig.defaultCityName,
-                          style: AppTextStyles.labelMedium.copyWith(fontWeight: FontWeight.bold),
+                          locationAsync.hasError
+                              ? 'Location Disabled — Tap to fix'
+                              : (cityNameAsync.value ?? 'Locating...'),
+                          style: AppTextStyles.labelMedium.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: locationAsync.hasError ? AppColors.error : null,
+                          ),
                         ),
                         const SizedBox(width: 4),
                         const Icon(Icons.refresh, size: 12, color: AppColors.textMuted),
@@ -95,6 +113,13 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
+
+                // Location Error Card (shown when GPS or permissions are unavailable)
+                if (locationAsync.hasError) ...[
+                  const SizedBox(height: 16),
+                  _buildLocationErrorCard(context, locationAsync.error, ref),
+                ],
+
                 const SizedBox(height: 28),
 
                 // Featured Card Section
@@ -112,7 +137,7 @@ class HomeScreen extends ConsumerWidget {
                     return _buildFeaturedCard(context, rec, ref);
                   },
                   loading: () => _buildShimmerLoader(),
-                  error: (err, _) => _buildErrorState(err.toString()),
+                  error: (err, _) => _buildErrorState(err, ref),
                 ),
 
                 const SizedBox(height: 32),
@@ -370,7 +395,103 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildErrorState(String error) {
+  Widget _buildLocationErrorCard(BuildContext context, Object? error, WidgetRef ref) {
+    final String message;
+    final bool isPermanentlyDenied;
+    if (error is LocationException) {
+      message = error.message;
+      isPermanentlyDenied = error.reason == LocationFailureReason.permissionPermanentlyDenied;
+    } else {
+      message = 'Location access is required to find places and experiences near you.';
+      isPermanentlyDenied = false;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.errorBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.error.withValues(alpha: 0.5)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.location_off_rounded, color: AppColors.error, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Location Unavailable',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: AppColors.error,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            message,
+            style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.settings, size: 16),
+                label: Text(isPermanentlyDenied ? 'App Settings' : 'Enable Location'),
+                onPressed: () {
+                  final loc = ref.read(locationServiceProvider);
+                  if (isPermanentlyDenied) {
+                    loc.openAppSettings();
+                  } else {
+                    loc.openLocationSettings();
+                  }
+                },
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textPrimary,
+                  side: const BorderSide(color: AppColors.border),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Retry'),
+                onPressed: () {
+                  ref.invalidate(locationStreamProvider);
+                  ref.invalidate(currentCityNameProvider);
+                  ref.invalidate(recommendationListProvider);
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildErrorState(Object err, WidgetRef ref) {
+    final isLocationError = err is LocationException ||
+        err.toString().toLowerCase().contains('location') ||
+        err.toString().toLowerCase().contains('gps');
+
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -381,21 +502,53 @@ class HomeScreen extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.error_outline, color: AppColors.error),
-              SizedBox(width: 8),
+              Icon(
+                isLocationError ? Icons.location_off_rounded : Icons.error_outline,
+                color: AppColors.error,
+              ),
+              const SizedBox(width: 8),
               Text(
-                'Something went wrong',
-                style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.error),
+                isLocationError ? 'Location Access Required' : 'Something went wrong',
+                style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.error),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Text(
-            'I couldn\'t find enough information to make a reliable recommendation. Try checking your internet or expanding your search parameters.',
+            err is LocationException
+                ? err.message
+                : (isLocationError
+                    ? 'WanderAI needs your location to recommend places and activities near you.'
+                    : 'I couldn\'t find enough information to make a reliable recommendation. Try checking your internet or expanding your search parameters.'),
             style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textSecondary),
           ),
+          const SizedBox(height: 14),
+          if (isLocationError)
+            Row(
+              children: [
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  ),
+                  icon: const Icon(Icons.settings, size: 16),
+                  label: const Text('Open Settings'),
+                  onPressed: () => ref.read(locationServiceProvider).openLocationSettings(),
+                ),
+                const SizedBox(width: 10),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.refresh, size: 16),
+                  label: const Text('Retry'),
+                  onPressed: () {
+                    ref.invalidate(locationStreamProvider);
+                    ref.invalidate(recommendationListProvider);
+                  },
+                ),
+              ],
+            ),
         ],
       ),
     );

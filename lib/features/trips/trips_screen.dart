@@ -432,23 +432,47 @@ class _TripsScreenState extends ConsumerState<TripsScreen> {
   }
 
   Widget _buildError(String errorMsg) {
+    final isLocation = errorMsg.toLowerCase().contains('location') ||
+        errorMsg.toLowerCase().contains('gps');
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 48),
+            Icon(
+              isLocation ? Icons.location_off_rounded : Icons.warning_amber_rounded,
+              color: AppColors.error,
+              size: 48,
+            ),
             const SizedBox(height: 16),
             Text(errorMsg, style: AppTextStyles.titleMedium, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () {
-                setState(() {
-                  _isConfiguring = true;
-                });
-              },
-              child: const Text('Back to Setup'),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (isLocation) ...[
+                  ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.black,
+                    ),
+                    icon: const Icon(Icons.settings, size: 16),
+                    label: const Text('Settings'),
+                    onPressed: () => ref.read(locationServiceProvider).openLocationSettings(),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+                OutlinedButton(
+                  onPressed: () {
+                    setState(() {
+                      _isConfiguring = true;
+                    });
+                  },
+                  child: const Text('Back to Setup'),
+                ),
+              ],
             ),
           ],
         ),
