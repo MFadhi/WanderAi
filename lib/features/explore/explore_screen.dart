@@ -20,18 +20,21 @@ class ExploreScreen extends ConsumerStatefulWidget {
 class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   GoogleMapController? _mapController;
   Place? _selectedPlace;
-  String _selectedCategory = 'Food';
+  bool _useMockMapFallback = false;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void dispose() {
     _mapController?.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final locationAsync = ref.watch(locationStreamProvider);
-    final recommendationsAsync = ref.watch(recommendationListProvider);
+    final selectedCategory = ref.watch(exploreCategoryProvider);
+    final recommendationsAsync = ref.watch(exploreRecommendationsProvider);
 
     // Automatically animate map to updated GPS coordinates
     ref.listen<AsyncValue<LatLng>>(locationStreamProvider, (prev, next) {
@@ -50,49 +53,71 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     return Scaffold(
       floatingActionButton: Padding(
         padding: const EdgeInsets.only(bottom: 90),
-        child: FloatingActionButton.small(
-          heroTag: 'explore_recenter',
-          backgroundColor: AppColors.surface,
-          onPressed: () async {
-            ref.invalidate(locationStreamProvider);
-            try {
-              final loc = await ref.read(locationServiceProvider).getCurrentLocation();
-              _mapController?.animateCamera(
-                CameraUpdate.newCameraPosition(
-                  CameraPosition(target: loc, zoom: 15.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            if (AppConfig.useLiveMap)
+              FloatingActionButton.small(
+                heroTag: 'explore_map_toggle',
+                backgroundColor: AppColors.surface,
+                tooltip: _useMockMapFallback ? 'Switch to Live Map' : 'Switch to Vector Map',
+                onPressed: () {
+                  setState(() {
+                    _useMockMapFallback = !_useMockMapFallback;
+                  });
+                },
+                child: Icon(
+                  _useMockMapFallback ? Icons.map_outlined : Icons.layers_outlined,
+                  color: AppColors.primary,
                 ),
-              );
-            } catch (e) {
-              if (context.mounted) {
-                final String msg = e is LocationException ? e.message : 'Could not determine your location.';
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(msg),
-                    backgroundColor: AppColors.error,
-                    action: SnackBarAction(
-                      label: 'Settings',
-                      textColor: Colors.white,
-                      onPressed: () {
-                        if (e is LocationException &&
-                            e.reason == LocationFailureReason.permissionPermanentlyDenied) {
-                          ref.read(locationServiceProvider).openAppSettings();
-                        } else {
-                          ref.read(locationServiceProvider).openLocationSettings();
-                        }
-                      },
+              ),
+            const SizedBox(height: 8),
+            FloatingActionButton.small(
+              heroTag: 'explore_recenter',
+              backgroundColor: AppColors.surface,
+              onPressed: () async {
+                ref.invalidate(locationStreamProvider);
+                try {
+                  final loc = await ref.read(locationServiceProvider).getCurrentLocation();
+                  _mapController?.animateCamera(
+                    CameraUpdate.newCameraPosition(
+                      CameraPosition(target: loc, zoom: 15.0),
                     ),
-                  ),
-                );
-              }
-            }
-          },
-          child: const Icon(Icons.my_location, color: AppColors.primary),
+                  );
+                } catch (e) {
+                  if (context.mounted) {
+                    final String msg = e is LocationException ? e.message : 'Could not determine your location.';
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(msg),
+                        backgroundColor: AppColors.error,
+                        action: SnackBarAction(
+                          label: 'Settings',
+                          textColor: Colors.white,
+                          onPressed: () {
+                            if (e is LocationException &&
+                                e.reason == LocationFailureReason.permissionPermanentlyDenied) {
+                              ref.read(locationServiceProvider).openAppSettings();
+                            } else {
+                              ref.read(locationServiceProvider).openLocationSettings();
+                            }
+                          },
+                        ),
+                      ),
+                    );
+                  }
+                }
+              },
+              child: const Icon(Icons.my_location, color: AppColors.primary),
+            ),
+          ],
         ),
       ),
       body: Stack(
         children: [
           // 1. Map Canvas (Live Google Map or Fallback Mock Vector Map)
-          AppConfig.useLiveMap
+          (AppConfig.useLiveMap && !_useMockMapFallback)
               ? _buildLiveMap(currentLoc, recommendationsAsync.value ?? [])
               : _buildMockMap(currentLoc, recommendationsAsync.value ?? []),
 
@@ -116,15 +141,27 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: TextField(
-                                decoration: const InputDecoration(
-                                  hintText: 'Search destinations or eat...',
+                                controller: _searchController,
+                                decoration: InputDecoration(
+                                  hintText: 'Search destinations, attractions, or food...',
                                   border: InputBorder.none,
                                   enabledBorder: InputBorder.none,
                                   focusedBorder: InputBorder.none,
                                   filled: false,
+                                  suffixIcon: _searchController.text.isNotEmpty
+                                      ? IconButton(
+                                          icon: const Icon(Icons.clear, size: 18),
+                                          onPressed: () {
+                                            _searchController.clear();
+                                            ref.read(exploreCategoryProvider.notifier).state = 'All';
+                                          },
+                                        )
+                                      : null,
                                 ),
                                 onSubmitted: (val) {
-                                  // Trigger text search
+                                  if (val.trim().isNotEmpty) {
+                                    ref.read(exploreCategoryProvider.notifier).state = val.trim();
+                                  }
                                 },
                               ),
                             ),
@@ -141,7 +178,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                         itemCount: AppConstants.categories.length,
                         itemBuilder: (context, index) {
                           final cat = AppConstants.categories[index];
-                          final isSelected = _selectedCategory == cat;
+                          final isSelected = selectedCategory == cat;
                           return Padding(
                             padding: const EdgeInsets.only(right: 8),
                             child: ChoiceChip(
@@ -149,9 +186,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                               selected: isSelected,
                               onSelected: (selected) {
                                 if (selected) {
-                                  setState(() {
-                                    _selectedCategory = cat;
-                                  });
+                                  ref.read(exploreCategoryProvider.notifier).state = cat;
                                 }
                               },
                             ),
@@ -159,6 +194,130 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
                         },
                       ),
                     ),
+
+                    // Loading Indicator Pill
+                    if (recommendationsAsync.isLoading) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(100),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 2))
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Finding ${selectedCategory == "All" ? "places" : selectedCategory.toLowerCase()}...',
+                              style: AppTextStyles.labelSmall.copyWith(color: AppColors.textPrimary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // Recommendations Error Banner
+                    if (recommendationsAsync.hasError) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.error),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 2))
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Could not load places: ${recommendationsAsync.error.toString().replaceAll("Exception: ", "")}',
+                                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textPrimary),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: () {
+                                ref.invalidate(exploreRecommendationsProvider);
+                              },
+                              child: const Text(
+                                'RETRY',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // Empty places banner
+                    if (recommendationsAsync.hasValue && (recommendationsAsync.value?.isEmpty ?? false)) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.border),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black38, blurRadius: 8, offset: Offset(0, 2))
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.search_off_rounded, color: AppColors.accent, size: 20),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'No places found for "$selectedCategory". Try selecting another category.',
+                                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textPrimary),
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            TextButton(
+                              style: TextButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                minimumSize: Size.zero,
+                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              ),
+                              onPressed: () {
+                                ref.read(exploreCategoryProvider.notifier).state = 'All';
+                              },
+                              child: const Text(
+                                'SHOW ALL',
+                                style: TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
 
                     // Location Error Banner (shown when GPS or permissions are unavailable)
                     if (locationAsync.hasError) ...[
@@ -261,17 +420,43 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       );
     }
 
+    const darkMapStyle = '''[
+      {"elementType":"geometry","stylers":[{"color":"#212121"}]},
+      {"elementType":"labels.icon","stylers":[{"visibility":"off"}]},
+      {"elementType":"labels.text.fill","stylers":[{"color":"#757575"}]},
+      {"elementType":"labels.text.stroke","stylers":[{"color":"#212121"}]},
+      {"featureType":"administrative","elementType":"geometry","stylers":[{"color":"#757575"}]},
+      {"featureType":"administrative.country","elementType":"labels.text.fill","stylers":[{"color":"#9e9e9e"}]},
+      {"featureType":"administrative.land_parcel","stylers":[{"visibility":"off"}]},
+      {"featureType":"administrative.locality","elementType":"labels.text.fill","stylers":[{"color":"#bdbdbd"}]},
+      {"featureType":"poi","elementType":"labels.text.fill","stylers":[{"color":"#757575"}]},
+      {"featureType":"poi.park","elementType":"geometry","stylers":[{"color":"#181818"}]},
+      {"featureType":"poi.park","elementType":"labels.text.fill","stylers":[{"color":"#616161"}]},
+      {"featureType":"poi.park","elementType":"labels.text.stroke","stylers":[{"color":"#1b1b1b"}]},
+      {"featureType":"road","elementType":"geometry.fill","stylers":[{"color":"#2c2c2c"}]},
+      {"featureType":"road","elementType":"labels.text.fill","stylers":[{"color":"#8a8a8a"}]},
+      {"featureType":"road.arterial","elementType":"geometry","stylers":[{"color":"#373737"}]},
+      {"featureType":"road.highway","elementType":"geometry","stylers":[{"color":"#3c3c3c"}]},
+      {"featureType":"road.highway.controlled_access","elementType":"geometry","stylers":[{"color":"#4e4e4e"}]},
+      {"featureType":"road.local","elementType":"labels.text.fill","stylers":[{"color":"#616161"}]},
+      {"featureType":"transit","elementType":"labels.text.fill","stylers":[{"color":"#757575"}]},
+      {"featureType":"water","elementType":"geometry","stylers":[{"color":"#000000"}]},
+      {"featureType":"water","elementType":"labels.text.fill","stylers":[{"color":"#3d3d3d"}]}
+    ]''';
+
     return GoogleMap(
       initialCameraPosition: CameraPosition(
         target: userLoc,
         zoom: 14.0,
       ),
+      mapType: MapType.normal,
+      style: darkMapStyle,
       onMapCreated: (controller) {
         _mapController = controller;
       },
       markers: markers,
       myLocationEnabled: true,
-      myLocationButtonEnabled: true,
+      myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
       onTap: (_) {
         setState(() {

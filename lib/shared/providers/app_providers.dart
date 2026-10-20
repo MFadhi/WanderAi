@@ -188,9 +188,49 @@ final recommendationListProvider = FutureProvider<List<Recommendation>>((ref) as
   return await engine.getRecommendations(preferences: preferences);
 });
 
+final bottomNavIndexProvider = StateProvider<int>((ref) => 0);
+
+final homeCategoryProvider = StateProvider<String>((ref) => 'All');
+
+final homeRecommendationProvider = FutureProvider<Recommendation?>((ref) async {
+  final engine = ref.watch(recommendationEngineProvider);
+  final preferences = ref.watch(userPreferencesProvider);
+  final category = ref.watch(homeCategoryProvider);
+
+  final list = await engine.getRecommendations(
+    preferences: preferences,
+    categoryFilter: category == 'All' ? null : category,
+  );
+  return list.isNotEmpty ? list.first : null;
+});
+
+final homeRecommendationListProvider = FutureProvider<List<Recommendation>>((ref) async {
+  final engine = ref.watch(recommendationEngineProvider);
+  final preferences = ref.watch(userPreferencesProvider);
+  final category = ref.watch(homeCategoryProvider);
+
+  final list = await engine.getRecommendations(
+    preferences: preferences,
+    categoryFilter: category == 'All' ? null : category,
+  );
+  return list.take(5).toList();
+});
+
 final currentRecommendationProvider = Provider<AsyncValue<Recommendation?>>((ref) {
-  final listAsync = ref.watch(recommendationListProvider);
-  return listAsync.whenData((list) => list.isNotEmpty ? list.first : null);
+  return ref.watch(homeRecommendationProvider);
+});
+
+final exploreCategoryProvider = StateProvider<String>((ref) => 'All');
+
+final exploreRecommendationsProvider = FutureProvider<List<Recommendation>>((ref) async {
+  final engine = ref.watch(recommendationEngineProvider);
+  final preferences = ref.watch(userPreferencesProvider);
+  final category = ref.watch(exploreCategoryProvider);
+
+  return await engine.getRecommendations(
+    preferences: preferences,
+    categoryFilter: category == 'All' ? null : category,
+  );
 });
 
 // ─────────────────────────────────────────────

@@ -11,8 +11,8 @@ import GoogleMaps
     GMSServices.provideAPIKey("AIzaSyCHerwqqt4bNVbF_G3V-a4vgdosC-KV-sg")
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
-
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
   }
 }
+

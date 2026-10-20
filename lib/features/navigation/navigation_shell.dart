@@ -1,44 +1,85 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../home/home_screen.dart';
 import '../explore/explore_screen.dart';
 import '../trips/trips_screen.dart';
 import '../saved/saved_screen.dart';
 import '../../core/theme/app_colors.dart';
+import '../../shared/providers/app_providers.dart';
 
-class NavigationShell extends StatefulWidget {
+class NavigationShell extends ConsumerWidget {
   const NavigationShell({super.key});
 
-  @override
-  State<NavigationShell> createState() => _NavigationShellState();
-}
-
-class _NavigationShellState extends State<NavigationShell> {
-  int _selectedIndex = 0;
-
-  final List<Widget> _screens = const [
+  static const List<Widget> _screens = [
     HomeScreen(),
     ExploreScreen(),
     TripsScreen(),
     SavedScreen(),
   ];
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-  }
-
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selectedIndex = ref.watch(bottomNavIndexProvider);
+
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: selectedIndex,
+            children: _screens,
+          ),
+          // Ask AI FAB — positioned above the bottom nav bar
+          Positioned(
+            bottom: 80,
+            right: 20,
+            child: GestureDetector(
+              onTap: () => context.push('/chat'),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [
+                      AppColors.primary,
+                      AppColors.accent,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: 0.4),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.auto_awesome, color: Colors.white, size: 18),
+                    SizedBox(width: 8),
+                    Text(
+                      'Ask AI',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: _onItemTapped,
+        selectedIndex: selectedIndex,
+        onDestinationSelected: (index) {
+          ref.read(bottomNavIndexProvider.notifier).state = index;
+        },
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.home_outlined),
@@ -61,43 +102,6 @@ class _NavigationShellState extends State<NavigationShell> {
             label: 'Saved',
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => context.push('/chat'),
-        backgroundColor: Colors.transparent,
-        elevation: 4,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
-        ),
-        label: Container(
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [
-                AppColors.primary,
-                AppColors.accent,
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(30),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.auto_awesome, color: Colors.white, size: 18),
-              SizedBox(width: 8),
-              Text(
-                'Ask AI',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

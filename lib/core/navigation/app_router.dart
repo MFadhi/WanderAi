@@ -6,27 +6,27 @@ import '../../features/chat/chat_screen.dart';
 import '../../features/details/place_details_screen.dart';
 import '../../features/navigation/navigation_shell.dart';
 import '../../features/onboarding/onboarding_screen.dart';
+import '../../features/splash/splash_screen.dart';
 import '../../shared/models/place_model.dart';
 
 final GoRouter appRouter = GoRouter(
-  initialLocation: '/',
-  redirect: (BuildContext context, GoRouterState state) async {
-    final prefs = await SharedPreferences.getInstance();
-    final onboardingDone = prefs.getBool(AppConstants.prefKeyOnboardingDone) ?? false;
-    
-    final isOnboarding = state.matchedLocation == '/onboarding';
-    
-    if (!onboardingDone && !isOnboarding) {
-      return '/onboarding';
-    }
-    
-    if (onboardingDone && isOnboarding) {
-      return '/';
-    }
-    
-    return null;
-  },
+  initialLocation: '/splash',
   routes: <RouteBase>[
+    GoRoute(
+      path: '/splash',
+      builder: (BuildContext context, GoRouterState state) {
+        return SplashScreen(
+          onComplete: () async {
+            final prefs = await SharedPreferences.getInstance();
+            final onboardingDone =
+                prefs.getBool(AppConstants.prefKeyOnboardingDone) ?? false;
+            if (context.mounted) {
+              context.go(onboardingDone ? '/' : '/onboarding');
+            }
+          },
+        );
+      },
+    ),
     GoRoute(
       path: '/',
       builder: (BuildContext context, GoRouterState state) {

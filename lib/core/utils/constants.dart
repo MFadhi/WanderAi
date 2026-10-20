@@ -37,6 +37,8 @@ sealed class AppConstants {
   // Explore Categories
   // ─────────────────────────────────────────────
   static const List<String> categories = [
+    'All',
+    'Attractions',
     'Food',
     'Cafés',
     'Nature',
@@ -48,6 +50,8 @@ sealed class AppConstants {
   ];
 
   static const Map<String, String> categoryEmojis = {
+    'All': '✨',
+    'Attractions': '🎡',
     'Food': '🍛',
     'Cafés': '☕',
     'Nature': '🌿',
@@ -59,6 +63,8 @@ sealed class AppConstants {
   };
 
   static const Map<String, String> categoryTypes = {
+    'All': 'tourist_attraction',
+    'Attractions': 'tourist_attraction',
     'Food': 'restaurant',
     'Cafés': 'cafe',
     'Nature': 'park',

@@ -122,7 +122,8 @@ class _PlaceDetailsScreenState extends ConsumerState<PlaceDetailsScreen> {
       );
     }
 
-    final isSaved = ref.watch(savedPlacesProvider.notifier).isSaved(_place.id);
+    final savedPlaces = ref.watch(savedPlacesProvider);
+    final isSaved = savedPlaces.any((p) => p.id == _place.id);
 
     return Scaffold(
       body: CustomScrollView(
@@ -135,8 +136,23 @@ class _PlaceDetailsScreenState extends ConsumerState<PlaceDetailsScreen> {
             actions: [
               IconButton(
                 icon: Icon(isSaved ? Icons.favorite : Icons.favorite_border, color: isSaved ? Colors.red : Colors.white),
-                onPressed: () {
-                  ref.read(savedPlacesProvider.notifier).toggleSave(_place);
+                onPressed: () async {
+                  final wasSaved = isSaved;
+                  await ref.read(savedPlacesProvider.notifier).toggleSave(_place);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          wasSaved
+                              ? 'Removed "${_place.name}" from saved places'
+                              : 'Saved "${_place.name}" to your places! ❤️',
+                        ),
+                        duration: const Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
                 },
               ),
             ],

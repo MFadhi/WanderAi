@@ -30,25 +30,49 @@ class RecommendationEngine {
     // 2. Fetch candidate places
     if (AppConfig.useMockPlaces) {
       candidates = List.from(MockDataService.places);
+      if (categoryFilter != null && categoryFilter != 'All') {
+        final searchType = _mapCategoryToPlaceType(categoryFilter);
+        final filtered = candidates.where((p) => p.primaryType == searchType).toList();
+        if (filtered.isNotEmpty) candidates = filtered;
+      }
     } else {
       try {
-        final searchType = categoryFilter != null
-            ? _mapCategoryToPlaceType(categoryFilter)
-            : _mapCategoryToPlaceType(preferences.interests.firstOrNull ?? 'Food');
+        if (categoryFilter == null || categoryFilter == 'All') {
+          // Fetch places matching top interests in parallel
+          final List<Future<List<Place>>> futures = [];
+          for (var interest in preferences.interests.take(3)) {
+            futures.add(_placesService.nearbySearch(
+              location: currentLoc,
+              placeType: _mapCategoryToPlaceType(interest),
+              radiusMeters: AppConfig.defaultSearchRadius,
+            ));
+          }
+          final res = await Future.wait(futures);
+          candidates = res.expand((x) => x).toList();
 
-        candidates = await _placesService.nearbySearch(
-          location: currentLoc,
-          placeType: searchType,
-          radiusMeters: AppConfig.defaultSearchRadius,
-        );
-
-        if (candidates.isEmpty) {
-          // Fallback to text search or other categories if empty
-          candidates = await _placesService.textSearch(
-            query: categoryFilter ?? preferences.interests.firstOrNull ?? 'top attractions',
+          if (candidates.isEmpty) {
+            candidates = await _placesService.textSearch(
+              query: 'top attractions and sightseeing',
+              location: currentLoc,
+              radiusMeters: AppConfig.defaultSearchRadius,
+            );
+          }
+        } else {
+          final searchType = _mapCategoryToPlaceType(categoryFilter);
+          candidates = await _placesService.nearbySearch(
             location: currentLoc,
+            placeType: searchType,
             radiusMeters: AppConfig.defaultSearchRadius,
           );
+
+          if (candidates.isEmpty) {
+            // Fallback to text search if nearbySearch returns empty
+            candidates = await _placesService.textSearch(
+              query: categoryFilter,
+              location: currentLoc,
+              radiusMeters: AppConfig.defaultSearchRadius,
+            );
+          }
         }
       } catch (_) {
         // Fallback to mock data if live API fails
@@ -178,6 +202,8 @@ class RecommendationEngine {
 
   String _mapCategoryToPlaceType(String category) {
     return switch (category.toLowerCase()) {
+      'all' => 'tourist_attraction',
+      'attractions' => 'tourist_attraction',
       'food' => 'restaurant',
       'cafés' => 'cafe',
       'nature' => 'park',

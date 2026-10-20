@@ -21,7 +21,8 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final recommendationAsync = ref.watch(currentRecommendationProvider);
+    final selectedCategory = ref.watch(homeCategoryProvider);
+    final recommendationListAsync = ref.watch(homeRecommendationListProvider);
     final cityNameAsync = ref.watch(currentCityNameProvider);
     final locationAsync = ref.watch(locationStreamProvider);
 
@@ -31,6 +32,7 @@ class HomeScreen extends ConsumerWidget {
           onRefresh: () async {
             ref.invalidate(locationStreamProvider);
             ref.invalidate(currentCityNameProvider);
+            ref.invalidate(homeRecommendationProvider);
             ref.invalidate(recommendationListProvider);
           },
           child: SingleChildScrollView(
@@ -71,6 +73,7 @@ class HomeScreen extends ConsumerWidget {
                   onTap: () {
                     ref.invalidate(locationStreamProvider);
                     ref.invalidate(currentCityNameProvider);
+                    ref.invalidate(homeRecommendationProvider);
                     ref.invalidate(recommendationListProvider);
                     if (locationAsync.hasError) {
                       ref.read(locationServiceProvider).openLocationSettings();
@@ -120,36 +123,74 @@ class HomeScreen extends ConsumerWidget {
                   _buildLocationErrorCard(context, locationAsync.error, ref),
                 ],
 
-                const SizedBox(height: 28),
+                const SizedBox(height: 24),
 
-                // Featured Card Section
-                Text(
-                  '✨ Best For You Right Now',
-                  style: AppTextStyles.titleLarge,
+                // Explore Nearby Categories (Switches)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Explore Nearby',
+                      style: AppTextStyles.titleLarge,
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      icon: const Icon(Icons.map_outlined, size: 16, color: AppColors.primary),
+                      label: const Text(
+                        'View Map',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      onPressed: () {
+                        ref.read(exploreCategoryProvider.notifier).state = selectedCategory;
+                        ref.read(bottomNavIndexProvider.notifier).state = 1;
+                      },
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 12),
+                _buildCategoriesList(context, ref),
 
-                recommendationAsync.when(
-                  data: (rec) {
-                    if (rec == null) {
+                const SizedBox(height: 24),
+
+                // Featured Cards Section for Selected Category
+                Row(
+                  children: [
+                    Text(
+                      selectedCategory == 'All'
+                          ? '✨ Best For You Right Now'
+                          : '✨ Best in $selectedCategory',
+                      style: AppTextStyles.titleLarge,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                recommendationListAsync.when(
+                  data: (recs) {
+                    if (recs.isEmpty) {
                       return _buildEmptyState();
                     }
-                    return _buildFeaturedCard(context, rec, ref);
+                    return Column(
+                      children: [
+                        for (int i = 0; i < recs.length; i++) ...[
+                          _buildFeaturedCard(context, recs[i], ref, isTop: i == 0),
+                          if (i < recs.length - 1) const SizedBox(height: 12),
+                        ],
+                      ],
+                    );
                   },
                   loading: () => _buildShimmerLoader(),
                   error: (err, _) => _buildErrorState(err, ref),
                 ),
 
-                const SizedBox(height: 32),
-
-                // Explore Nearby Categories
-                Text(
-                  'Explore Nearby',
-                  style: AppTextStyles.titleLarge,
-                ),
-                const SizedBox(height: 16),
-                _buildCategoriesList(context),
-                const SizedBox(height: 48), // Bottom padding for FAB spacing
+                const SizedBox(height: 100), // Bottom padding for Ask AI FAB
               ],
             ),
           ),
@@ -158,10 +199,11 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildFeaturedCard(BuildContext context, Recommendation rec, WidgetRef ref) {
+  Widget _buildFeaturedCard(BuildContext context, Recommendation rec, WidgetRef ref, {bool isTop = false}) {
     final place = rec.place;
     final transportOpt = rec.recommendedOption;
-    final isSaved = ref.watch(savedPlacesProvider.notifier).isSaved(place.id);
+    final savedPlaces = ref.watch(savedPlacesProvider);
+    final isSaved = savedPlaces.any((p) => p.id == place.id);
 
     return Card(
       elevation: 4,
@@ -243,14 +285,29 @@ class HomeScreen extends ConsumerWidget {
                 top: 12,
                 right: 12,
                 child: CircleAvatar(
-                  backgroundColor: Colors.white.withValues(alpha: 0.3),
+                  backgroundColor: Colors.black.withValues(alpha: 0.4),
                   child: IconButton(
                     icon: Icon(
                       isSaved ? Icons.favorite : Icons.favorite_border,
-                      color: isSaved ? Colors.red : Colors.white,
+                      color: isSaved ? Colors.redAccent : Colors.white,
                     ),
-                    onPressed: () {
-                      ref.read(savedPlacesProvider.notifier).toggleSave(place);
+                    onPressed: () async {
+                      final wasSaved = isSaved;
+                      await ref.read(savedPlacesProvider.notifier).toggleSave(place);
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              wasSaved
+                                  ? 'Removed "${place.name}" from saved places'
+                                  : 'Saved "${place.name}" to your places! ❤️',
+                            ),
+                            duration: const Duration(seconds: 2),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
                     },
                   ),
                 ),
@@ -340,7 +397,7 @@ class HomeScreen extends ConsumerWidget {
                 ],
                 const SizedBox(height: 20),
 
-                // Action
+        // Action
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -356,23 +413,28 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildCategoriesList(BuildContext context) {
+  Widget _buildCategoriesList(BuildContext context, WidgetRef ref) {
+    final selectedCategory = ref.watch(homeCategoryProvider);
+
     return SizedBox(
-      height: 48,
+      height: 44,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: AppConstants.categories.length,
         itemBuilder: (context, index) {
           final cat = AppConstants.categories[index];
           final emoji = AppConstants.categoryEmojis[cat] ?? '';
+          final isSelected = selectedCategory == cat;
           return Padding(
             padding: const EdgeInsets.only(right: 8),
-            child: ActionChip(
+            child: ChoiceChip(
               avatar: Text(emoji),
               label: Text(cat),
-              onPressed: () {
-                // For simplicity, we can let user filter by category,
-                // or just trigger search with query.
+              selected: isSelected,
+              onSelected: (selected) {
+                if (selected) {
+                  ref.read(homeCategoryProvider.notifier).state = cat;
+                }
               },
             ),
           );

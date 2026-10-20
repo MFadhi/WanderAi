@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:geolocator/geolocator.dart';
 import 'core/navigation/app_router.dart';
 import 'core/theme/app_theme.dart';
 
@@ -15,18 +14,6 @@ void main() async {
     debugPrint('Note: .env file not found or failed to load: $e');
   }
 
-  // Request location permission early so geolocator works on first frame.
-  try {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (serviceEnabled) {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        await Geolocator.requestPermission();
-      }
-    }
-  } catch (_) {
-    // Ignore errors during startup permission check; handled per-feature.
-  }
 
   runApp(
     const ProviderScope(

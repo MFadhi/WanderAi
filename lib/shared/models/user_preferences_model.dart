@@ -42,8 +42,8 @@ class UserPreferences {
 
   /// Sensible defaults shown on first launch
   static UserPreferences defaults() => const UserPreferences(
-        interests: ['Food', 'Nature', 'History'],
-        maxBudget: 500,
+        interests: ['Attractions', 'Nature', 'Food', 'History'],
+        maxBudget: 1000,
         preferredTransport: 'TWO_WHEELER',
         availableHours: 3.0,
         dietaryPreferences: [],
